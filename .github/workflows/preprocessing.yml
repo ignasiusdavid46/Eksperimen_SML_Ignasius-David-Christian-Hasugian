@@ -1,0 +1,82 @@
+name: Automated Preprocessing - Wine Quality Dataset
+
+# Trigger
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'winequality-red_raw.csv'                          
+      - 'preprocessing/automate_Ignasius-David-Christian-Hasugian.py'  
+  workflow_dispatch:                                       
+
+# Jobs
+jobs:
+  preprocess:
+    name: Run Preprocessing Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Python
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 3. Cache pip dependencies
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 4. Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn
+
+      # 5. Jalankan preprocessing pipeline
+      - name: Run Preprocessing Script
+        run: |
+          cd preprocessing
+          python automate_Ignasius-David-Christian-Hasugian.py \
+            --input ../winequality-red_raw.csv \
+            --output-dir ./winequality_preprocessing
+
+      # 6. Verifikasi output yang dihasilkan
+      - name: Verify Output Files
+        run: |
+          echo "=== Cek file hasil preprocessing ==="
+          ls -lh preprocessing/winequality_preprocessing/
+          python - <<'EOF'
+          import pandas as pd
+          train = pd.read_csv('preprocessing/winequality_preprocessing/winequality_train.csv')
+          test  = pd.read_csv('preprocessing/winequality_preprocessing/winequality_test.csv')
+          print(f"Train shape : {train.shape}")
+          print(f"Test  shape : {test.shape}")
+          print(f"Missing train: {train.isnull().sum().sum()}")
+          print(f"Missing test : {test.isnull().sum().sum()}")
+          assert train.isnull().sum().sum() == 0, "Ada missing values di train!"
+          assert test.isnull().sum().sum()  == 0, "Ada missing values di test!"
+          print("Verifikasi PASSED")
+          EOF
+
+      # 7. Commit & push hasil preprocessing ke repo
+      - name: Commit Preprocessed Dataset
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name  "github-actions[bot]"
+          git add preprocessing/winequality_preprocessing/
+          git diff --staged --quiet || git commit -m "ci: update preprocessed dataset [skip ci]"
+
+      - name: Push Changes
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
